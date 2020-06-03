@@ -90,8 +90,12 @@ int pmem2_source_delete(struct pmem2_source **src);
 
 struct pmem2_vm_reservation;
 
+void *pmem2_vm_reservation_get_address(struct pmem2_vm_reservation *rsv);
+
+size_t pmem2_vm_reservation_get_size(struct pmem2_vm_reservation *rsv);
+
 int pmem2_vm_reservation_new(struct pmem2_vm_reservation **rsv,
-		size_t size, void *address);
+		size_t size, void *addr);
 
 int pmem2_vm_reservation_delete(struct pmem2_vm_reservation **rsv);
 
