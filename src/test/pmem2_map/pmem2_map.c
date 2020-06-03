@@ -113,6 +113,7 @@ prepare_map(struct pmem2_map **map_ptr,
 	map->source.value.ftype = PMEM2_FTYPE_REG;
 	map->reserved_length = map->content_length = cfg->length;
 	map->effective_granularity = PMEM2_GRANULARITY_PAGE;
+	map->reserv = NULL;
 
 	*map_ptr = map;
 
@@ -1079,6 +1080,189 @@ test_map_fixed_noreplace_partial_above_overlap(const struct test_case *tc,
 }
 
 /*
+ * test_map_vm_reservation_file - map a file to a vm reservation
+ */
+static int
+test_map_vm_reservation_file(const struct test_case *tc,
+		int argc, char *argv[])
+{
+	if (argc < 2)
+		UT_FATAL("usage: test_map_rdrw_file <file> <size>");
+
+	char *file = argv[0];
+	size_t size = ATOUL(argv[1]);
+	size_t reserv_size = 0;
+	struct pmem2_config cfg;
+	struct pmem2_map *map;
+	struct pmem2_vm_reservation *rsv;
+	struct pmem2_source *src;
+	struct FHandle *fh;
+
+	reserv_size += size;
+	UT_ASSERTne(reserv_size, 0);
+
+	int ret = pmem2_vm_reservation_new(&rsv, reserv_size, NULL);
+	UT_ASSERTeq(ret, 0);
+
+	ut_pmem2_prepare_config(&cfg, &src, &fh, FH_FD, file, 0, 0,
+			FH_RDWR);
+	pmem2_config_set_vm_reservation(&cfg, rsv, 0);
+
+	ret = pmem2_map(&cfg, src, &map);
+	UT_PMEM2_EXPECT_RETURN(ret, 0);
+
+	UT_ASSERTeq(pmem2_vm_reservation_get_address(rsv),
+			pmem2_map_get_address(map));
+
+	ret = pmem2_unmap(&map);
+	UT_ASSERTeq(ret, 0);
+	UT_ASSERTeq(map, NULL);
+	pmem2_vm_reservation_delete(&rsv);
+	PMEM2_SOURCE_DELETE(&src);
+	UT_FH_CLOSE(fh);
+
+	return 2;
+}
+
+/*
+ * test_map_vm_reservation_invalid_size - map a file to a vm reservation
+ *                                        with insufficient space
+ */
+static int
+test_map_vm_reservation_invalid_size(const struct test_case *tc,
+		int argc, char *argv[])
+{
+	if (argc < 2)
+		UT_FATAL("usage: test_map_rdrw_file <file> <size>");
+
+	char *file = argv[0];
+	size_t size = ATOUL(argv[1]);
+	size_t reserv_size;
+	struct pmem2_config cfg;
+	struct pmem2_map *map;
+	struct pmem2_vm_reservation *rsv;
+	struct pmem2_source *src;
+	struct FHandle *fh;
+
+	reserv_size = size / 2;
+	UT_ASSERTne(reserv_size, 0);
+
+	int ret = pmem2_vm_reservation_new(&rsv, reserv_size, NULL);
+	UT_ASSERTeq(ret, 0);
+
+	ut_pmem2_prepare_config(&cfg, &src, &fh, FH_FD, file, 0, 0,
+			FH_RDWR);
+	pmem2_config_set_vm_reservation(&cfg, rsv, 0);
+
+	ret = pmem2_map(&cfg, src, &map);
+	UT_PMEM2_EXPECT_RETURN(ret, PMEM2_E_LENGTH_OUT_OF_RANGE);
+
+	pmem2_vm_reservation_delete(&rsv);
+	PMEM2_SOURCE_DELETE(&src);
+	UT_FH_CLOSE(fh);
+
+	return 2;
+}
+
+/*
+ * test_map_vm_reservation_full_overlap - map a file to a vm reservation and
+ *                                        overlap existing mapping
+ */
+static int
+test_map_vm_reservation_full_overlap(const struct test_case *tc,
+		int argc, char *argv[])
+{
+	if (argc < 2)
+		UT_FATAL("usage: test_map_rdrw_file <file>");
+
+	char *file = argv[0];
+	size_t size = ATOUL(argv[1]);
+	size_t reserv_size;
+	struct pmem2_config cfg;
+	struct pmem2_map *map;
+	struct pmem2_map *overlap_map;
+	struct pmem2_vm_reservation *rsv;
+	struct pmem2_source *src;
+	struct FHandle *fh;
+
+	reserv_size = size;
+	UT_ASSERTne(reserv_size, 0);
+
+	int ret = pmem2_vm_reservation_new(&rsv, reserv_size, NULL);
+	UT_ASSERTeq(ret, 0);
+
+	ut_pmem2_prepare_config(&cfg, &src, &fh, FH_FD, file, 0, 0,
+			FH_RDWR);
+	pmem2_config_set_vm_reservation(&cfg, rsv, 0);
+
+	ret = pmem2_map(&cfg, src, &map);
+	UT_PMEM2_EXPECT_RETURN(ret, 0);
+
+	ret = pmem2_map(&cfg, src, &overlap_map);
+	UT_PMEM2_EXPECT_RETURN(ret, PMEM2_E_MAPPING_EXISTS);
+
+	ret = pmem2_unmap(&map);
+	UT_ASSERTeq(ret, 0);
+	UT_ASSERTeq(map, NULL);
+	pmem2_vm_reservation_delete(&rsv);
+	PMEM2_SOURCE_DELETE(&src);
+	UT_FH_CLOSE(fh);
+
+	return 2;
+}
+
+/*
+ * test_map_vm_reservation_partial_overlap - map a file to a vm reservation in
+ *                                           the middle of existing mapping
+ */
+static int
+test_map_vm_reservation_partial_overlap(const struct test_case *tc,
+		int argc, char *argv[])
+{
+	if (argc < 2)
+		UT_FATAL("usage: test_map_rdrw_file <file>");
+
+	char *file = argv[0];
+	size_t size = ATOUL(argv[1]);
+	size_t reserv_size;
+	size_t reserv_offset = 0;
+	struct pmem2_config cfg;
+	struct pmem2_map *map;
+	struct pmem2_map *overlap_map;
+	struct pmem2_vm_reservation *rsv;
+	struct pmem2_source *src;
+	struct FHandle *fh;
+
+	reserv_size = size + size / 2;
+	UT_ASSERTne(reserv_size, 0);
+
+	int ret = pmem2_vm_reservation_new(&rsv, reserv_size, NULL);
+	UT_ASSERTeq(ret, 0);
+
+	ut_pmem2_prepare_config(&cfg, &src, &fh, FH_FD, file, 0, 0,
+			FH_RDWR);
+	pmem2_config_set_vm_reservation(&cfg, rsv, reserv_offset);
+
+	ret = pmem2_map(&cfg, src, &map);
+	UT_PMEM2_EXPECT_RETURN(ret, 0);
+
+	reserv_offset = size / 2;
+	pmem2_config_set_vm_reservation(&cfg, rsv, reserv_offset);
+
+	ret = pmem2_map(&cfg, src, &overlap_map);
+	UT_PMEM2_EXPECT_RETURN(ret, PMEM2_E_MAPPING_EXISTS);
+
+	ret = pmem2_unmap(&map);
+	UT_ASSERTeq(ret, 0);
+	UT_ASSERTeq(map, NULL);
+	pmem2_vm_reservation_delete(&rsv);
+	PMEM2_SOURCE_DELETE(&src);
+	UT_FH_CLOSE(fh);
+
+	return 2;
+}
+
+/*
  * test_cases -- available test cases
  */
 static struct test_case test_cases[] = {
@@ -1107,6 +1291,10 @@ static struct test_case test_cases[] = {
 	TEST_CASE(test_map_fixed_noreplace_full_overlap),
 	TEST_CASE(test_map_fixed_noreplace_partial_overlap),
 	TEST_CASE(test_map_fixed_noreplace_partial_above_overlap),
+	TEST_CASE(test_map_vm_reservation_file),
+	TEST_CASE(test_map_vm_reservation_invalid_size),
+	TEST_CASE(test_map_vm_reservation_full_overlap),
+	TEST_CASE(test_map_vm_reservation_partial_overlap),
 };
 
 #define NTESTS (sizeof(test_cases) / sizeof(test_cases[0]))

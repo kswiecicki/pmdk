@@ -250,3 +250,29 @@ class TEST32(PMEM2_MAP):
     existing mapping with request type PMEM2_ADDRESS_FIXED_NOREPLACE
     """
     test_case = "test_map_fixed_noreplace_partial_above_overlap"
+
+
+class TEST33(PMEM2_MAP):
+    """map a file to a vm reservation"""
+    test_case = "test_map_vm_reservation_file"
+
+
+class TEST34(PMEM2_MAP):
+    """map a file to a vm reservation with insufficient space"""
+    test_case = "test_map_vm_reservation_invalid_size"
+
+
+class TEST35(PMEM2_MAP):
+    """
+    map a file to a vm reservation and overlap whole other existing mapping
+    belonging to the same reservation
+    """
+    test_case = "test_map_vm_reservation_full_overlap"
+
+
+class TEST36(PMEM2_MAP):
+    """
+    map a file to a vm reservation in the middle of other existing mapping
+    belonging to the same reservation
+    """
+    test_case = "test_map_vm_reservation_partial_overlap"
