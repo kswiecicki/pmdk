@@ -49,19 +49,20 @@ pmem2_vm_reservation_get_size(struct pmem2_vm_reservation *rsv)
  * mapping_min - return min boundary for mapping
  */
 static size_t
-mapping_min(void *map)
+mapping_min(void *addr)
 {
-	return (size_t)pmem2_map_get_address(map);
+	struct pmem2_map *map = (struct pmem2_map *)addr;
+	return (size_t)map->addr;
 }
 
 /*
  * mapping_max - return max boundary for mapping
  */
 static size_t
-mapping_max(void *map)
+mapping_max(void *addr)
 {
-	return (size_t)pmem2_map_get_address(map) +
-		pmem2_map_get_size(map);
+	struct pmem2_map *map = (struct pmem2_map *)addr;
+	return (size_t)map->addr + map->reserved_length;
 }
 
 /*
@@ -99,24 +100,26 @@ pmem2_vm_reservation_new(struct pmem2_vm_reservation **rsv_ptr,
 	PMEM2_ERR_CLR();
 	*rsv_ptr = NULL;
 
-	unsigned long long gran = Mmap_align;
-
-	if (addr && (unsigned long long)addr % gran) {
+	/*
+	 * base address has to be aligned to the allocation granularity
+	 * on Windows, and to page size otherwise
+	 */
+	if (addr && (unsigned long long)addr % Mmap_align) {
 		ERR("address %p is not a multiple of 0x%llx", addr,
-			gran);
+			Mmap_align);
 		return PMEM2_E_ADDRESS_UNALIGNED;
 	}
 
-	if (size % gran) {
+	/* the size must always be a multiple of the page size */
+	if (size % Pagesize) {
 		ERR("reservation size %zu is not a multiple of %llu",
-			size, gran);
+			size, Pagesize);
 		return PMEM2_E_LENGTH_UNALIGNED;
 	}
 
 	int ret;
 	struct pmem2_vm_reservation *rsv = pmem2_malloc(
 			sizeof(struct pmem2_vm_reservation), &ret);
-
 	if (ret)
 		return ret;
 
@@ -229,7 +232,7 @@ vm_reservation_map_find(struct pmem2_vm_reservation *rsv, size_t reserv_offset,
 {
 	struct pmem2_map map;
 	map.addr = (char *)rsv->addr + reserv_offset;
-	map.content_length = len;
+	map.reserved_length = len;
 
 	struct ravl_interval_node *node;
 

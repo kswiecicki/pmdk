@@ -80,7 +80,7 @@ vm_reservation_map_find_closest_prior(struct pmem2_vm_reservation *rsv,
 {
 	struct pmem2_map map;
 	map.addr = (char *)rsv->addr + reserv_offset;
-	map.content_length = len;
+	map.reserved_length = len;
 
 	struct ravl_interval_node *node;
 
@@ -104,7 +104,7 @@ vm_reservation_map_find_closest_later(struct pmem2_vm_reservation *rsv,
 {
 	struct pmem2_map map;
 	map.addr = (char *)rsv->addr + reserv_offset;
-	map.content_length = len;
+	map.reserved_length = len;
 
 	struct ravl_interval_node *node;
 
