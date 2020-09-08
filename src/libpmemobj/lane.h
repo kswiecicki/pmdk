@@ -9,6 +9,7 @@
 #define LIBPMEMOBJ_LANE_H 1
 
 #include <stdint.h>
+#include "sys_util.h"
 #include "ulog.h"
 #include "libpmemobj.h"
 
@@ -95,7 +96,9 @@ struct lane_descriptor {
 	 */
 	unsigned runtime_nlanes;
 	unsigned next_lane_idx;
+	/* Bitmap representing busy lanes */
 	uint64_t *lane_locks;
+	os_semaphore_t *lane_semaphore;
 	struct lane *lane;
 };
 

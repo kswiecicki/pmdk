@@ -1024,8 +1024,6 @@ do_tx_add_range_zero(PMEMobjpool *pop)
 	} TX_ONABORT {
 		UT_ASSERT(0);
 	} TX_END
-
-	UT_ASSERTne(errno, 0);
 }
 
 /*

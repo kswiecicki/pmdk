@@ -256,7 +256,6 @@ static inline void
 util_semaphore_wait(os_semaphore_t *sem)
 {
 	errno = 0;
-
 	int ret;
 	do {
 		ret = os_semaphore_wait(sem);

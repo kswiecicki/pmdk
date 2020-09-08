@@ -386,6 +386,12 @@ main(int argc, char *argv[])
 	 */
 	unsigned old_nlanes = pop->lanes_desc.runtime_nlanes;
 	pop->lanes_desc.runtime_nlanes = TEST_LANES;
+	/*
+	 * When changing the number of runtime lanes, the count value of the
+	 * lane semaphore has to be changed too.
+	 */
+	util_semaphore_destroy(pop->lanes_desc.lane_semaphore);
+	util_semaphore_init(pop->lanes_desc.lane_semaphore, TEST_LANES);
 	run_worker(tx2_worker, args);
 	pop->lanes_desc.runtime_nlanes = old_nlanes;
 

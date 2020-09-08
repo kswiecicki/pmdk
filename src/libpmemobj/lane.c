@@ -1,5 +1,5 @@
 // SPDX-License-Identifier: BSD-3-Clause
-/* Copyright 2015-2019, Intel Corporation */
+/* Copyright 2015-2020, Intel Corporation */
 
 /*
  * lane.c -- lane implementation
@@ -266,10 +266,21 @@ lane_boot(PMEMobjpool *pop)
 
 	pop->lanes_desc.lane_locks =
 		Zalloc(sizeof(*pop->lanes_desc.lane_locks) * pop->nlanes);
+
 	if (pop->lanes_desc.lane_locks == NULL) {
 		ERR("!Malloc for lane locks");
 		goto error_locks_malloc;
 	}
+
+	pop->lanes_desc.lane_semaphore = Malloc(sizeof(os_semaphore_t));
+
+	if (pop->lanes_desc.lane_semaphore == NULL) {
+		ERR("!Malloc for lane semaphore");
+		goto error_locks_semaphore;
+	}
+
+	util_semaphore_init(pop->lanes_desc.lane_semaphore,
+			(unsigned)pop->nlanes);
 
 	/* add lanes to pmemcheck ignored list */
 	VALGRIND_ADD_TO_GLOBAL_TX_IGNORE((char *)pop + pop->lanes_offset,
@@ -290,6 +301,10 @@ lane_boot(PMEMobjpool *pop)
 error_lane_init:
 	for (; i >= 1; --i)
 		lane_destroy(pop, &pop->lanes_desc.lane[i - 1]);
+	util_semaphore_destroy(pop->lanes_desc.lane_semaphore);
+	Free(pop->lanes_desc.lane_semaphore);
+	pop->lanes_desc.lane_semaphore = NULL;
+error_locks_semaphore:
 	Free(pop->lanes_desc.lane_locks);
 	pop->lanes_desc.lane_locks = NULL;
 error_locks_malloc:
@@ -335,6 +350,9 @@ lane_cleanup(PMEMobjpool *pop)
 	pop->lanes_desc.lane = NULL;
 	Free(pop->lanes_desc.lane_locks);
 	pop->lanes_desc.lane_locks = NULL;
+	util_semaphore_destroy(pop->lanes_desc.lane_semaphore);
+	Free(pop->lanes_desc.lane_semaphore);
+	pop->lanes_desc.lane_semaphore = NULL;
 
 	lane_info_cleanup(pop);
 }
@@ -421,35 +439,51 @@ lane_check(PMEMobjpool *pop)
  * get_lane -- (internal) get free lane index
  */
 static inline void
-get_lane(uint64_t *locks, struct lane_info *info, uint64_t nlocks)
+get_lane(uint64_t *locks, struct lane_info *info, uint64_t nlanes,
+		os_semaphore_t *semaphore)
 {
+	/*
+	 * TODO -- Decide if we should:
+	 *         * Remove the primary index and iterate from index 0
+	 *         everytime and limit the iterations to the nlanes.
+	 *         That way every thread that has passed the 'semaphore wait'
+	 *         is guaranteed to find a lane in max 'nlanes' number of
+	 *         iterations, unless there was a bug and we could throw FATAL
+	 *         error after the loop to detect it.
+	 *
+	 *         * Iterate starting from the primary index until a free lane
+	 *         is found. If there was a thread looking for a lane, other
+	 *         threads that start from their primary indexes could be
+	 *         snatching the lanes closest to the aforementioned thread,
+	 *         resulting in that thread hanging while looking for a lane
+	 *         for undefined time.
+	 *         And there's no explicit error message to detect the bug.
+	 */
 	info->lane_idx = info->primary;
-	while (1) {
-		do {
-			info->lane_idx %= nlocks;
-			if (likely(util_bool_compare_and_swap64(
-					&locks[info->lane_idx], 0, 1))) {
-				if (info->lane_idx == info->primary) {
-					info->primary_attempts =
-						LANE_PRIMARY_ATTEMPTS;
-				} else if (info->primary_attempts == 0) {
-					info->primary = info->lane_idx;
-					info->primary_attempts =
-						LANE_PRIMARY_ATTEMPTS;
-				}
-				return;
+
+	util_semaphore_wait(semaphore);
+	do {
+		info->lane_idx %= nlanes;
+		if (likely(util_bool_compare_and_swap64(
+							&locks[info->lane_idx], 0, 1))) {
+			if (info->lane_idx == info->primary) {
+				info->primary_attempts =
+					LANE_PRIMARY_ATTEMPTS;
+			} else if (info->primary_attempts == 0) {
+				info->primary = info->lane_idx;
+				info->primary_attempts =
+					LANE_PRIMARY_ATTEMPTS;
 			}
+			return;
+		}
 
-			if (info->lane_idx == info->primary &&
-					info->primary_attempts > 0) {
-				info->primary_attempts--;
-			}
+		if (info->lane_idx == info->primary &&
+		    info->primary_attempts > 0) {
+			info->primary_attempts--;
+		}
 
-			++info->lane_idx;
-		} while (info->lane_idx < nlocks);
-
-		sched_yield();
-	}
+		++info->lane_idx;
+	} while (1);
 }
 
 /*
@@ -522,9 +556,11 @@ lane_hold(PMEMobjpool *pop, struct lane **lanep)
 	} /* handles wraparound */
 
 	uint64_t *llocks = pop->lanes_desc.lane_locks;
+	os_semaphore_t *lsemaphore = pop->lanes_desc.lane_semaphore;
 	/* grab next free lane from lanes available at runtime */
 	if (!lane->nest_count++) {
-		get_lane(llocks, lane, pop->lanes_desc.runtime_nlanes);
+		get_lane(llocks, lane, pop->lanes_desc.runtime_nlanes,
+				lsemaphore);
 	}
 
 	struct lane *l = &pop->lanes_desc.lane[lane->lane_idx];
@@ -568,5 +604,6 @@ lane_release(PMEMobjpool *pop)
 				1, 0))) {
 			FATAL("util_bool_compare_and_swap64");
 		}
+		util_semaphore_post(pop->lanes_desc.lane_semaphore);
 	}
 }

@@ -95,7 +95,7 @@ typedef uint64_t type_num_t;
 #define CONVERSION_FLAG_OLD_SET_CACHE ((1ULL) << 0)
 
 /* PMEM_OBJ_POOL_HEAD_SIZE Without the unused and unused2 arrays */
-#define PMEM_OBJ_POOL_HEAD_SIZE 2196
+#define PMEM_OBJ_POOL_HEAD_SIZE 2204
 #define PMEM_OBJ_POOL_UNUSED2_SIZE (PMEM_PAGESIZE \
 					- OBJ_DSC_P_UNUSED\
 					- PMEM_OBJ_POOL_HEAD_SIZE)
