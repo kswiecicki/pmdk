@@ -129,6 +129,9 @@ test_lane_hold_release(void)
 	pop->p.lanes_desc.next_lane_idx = 0;
 
 	pop->p.lanes_desc.lane_locks = CALLOC(OBJ_NLANES, sizeof(uint64_t));
+	pop->p.lanes_desc.lane_semaphore = MALLOC(sizeof(os_semaphore_t));
+	util_semaphore_init(pop->p.lanes_desc.lane_semaphore, OBJ_NLANES);
+
 	pop->p.lanes_offset = (uint64_t)&pop->l - (uint64_t)&pop->p;
 	pop->p.uuid_lo = 123456;
 	base_ptr = &pop->p;
@@ -158,6 +161,8 @@ test_lane_hold_release(void)
 
 	SIGACTION(SIGABRT, &old, NULL);
 
+	util_semaphore_destroy(pop->p.lanes_desc.lane_semaphore);
+	FREE(pop->p.lanes_desc.lane_semaphore);
 	FREE(pop->p.lanes_desc.lane_locks);
 	FREE(pop);
 	operation_delete(ctx);

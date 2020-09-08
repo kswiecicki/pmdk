@@ -1,5 +1,5 @@
 // SPDX-License-Identifier: BSD-3-Clause
-/* Copyright 2018, Intel Corporation */
+/* Copyright 2018-2020, Intel Corporation */
 
 /*
  * win_poolset_unmap.c -- test for windows mmap destructor.
@@ -73,6 +73,8 @@ main(int argc, char *argv[])
 	UT_ASSERTeq(bytes_returned, sizeof(basic_info));
 	UT_ASSERTeq(basic_info.RegionSize, (50 - 8) * MEGABYTE);
 	UT_ASSERTeq(basic_info.State, MEM_RESERVE);
+
+	pmemobj_close(pop);
 
 	DONE(NULL);
 }
