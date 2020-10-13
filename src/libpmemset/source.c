@@ -5,8 +5,8 @@
  * source.c -- implementation of common config API
  */
 
-#include "source.h"
 #include "libpmemset.h"
+#include "source.h"
 
 /*
  * pmemset_source_from_external -- not supported
@@ -20,15 +20,6 @@ pmemset_source_from_external(struct pmemset_source **src,
 
 #ifndef _WIN32
 /*
- * pmemset_source_from_file -- not supported
- */
-int
-pmemset_source_from_file(struct pmemset_source **src, const char *file)
-{
-	return PMEMSET_E_NOSUPP;
-}
-
-/*
  * pmemset_source_from_temporary -- not supported
  */
 int
@@ -37,22 +28,6 @@ pmemset_source_from_temporary(struct pmemset_source **src, const char *dir)
 	return PMEMSET_E_NOSUPP;
 }
 #else
-/*
- * pmemset_source_from_fileU -- not supported
- */
-int
-pmemset_source_from_fileU(struct pmemset_source **src, const char *file)
-{
-	return PMEMSET_E_NOSUPP;
-}
-
-/*
- * pmemset_source_from_fileW -- not supported
- */
-pmemset_source_from_fileW(struct pmemset_source **src, const wchar_t *file)
-{
-	return PMEMSET_E_NOSUPP;
-}
 
 /*
  * pmemset_source_from_file_paramsU -- not supported

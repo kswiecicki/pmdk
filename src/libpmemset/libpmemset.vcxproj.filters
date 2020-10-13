@@ -56,7 +56,7 @@
     <ClCompile Include="errormsg.c">
       <Filter>Source Files</Filter>
     </ClCompile>
-    <ClCompile Include="pmemset_utils.c">
+    <ClCompile Include="source_windows.c">
       <Filter>Source Files</Filter>
     </ClCompile>
   </ItemGroup>
