@@ -17,4 +17,7 @@ enum pmemset_source_type {
 
 int pmemset_source_validate(const struct pmemset_source *src);
 
+int pmemset_source_get_pmem2_map(const struct pmemset_source *src,
+		struct pmem2_config *cfg, struct pmem2_map **map);
+
 #endif /* PMEMSET_SOURCE_H */
