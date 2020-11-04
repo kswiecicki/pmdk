@@ -7,6 +7,8 @@
 #ifndef PMEMSET_H
 #define PMEMSET_H
 
+#include "libpmemset.h"
+#include "part.h"
 #ifdef __cplusplus
 extern "C" {
 #endif
@@ -17,6 +19,10 @@ extern "C" {
 #define PMEMSET_LOG_PREFIX "libpmemset"
 #define PMEMSET_LOG_LEVEL_VAR "PMEMSET_LOG_LEVEL"
 #define PMEMSET_LOG_FILE_VAR "PMEMSET_LOG_FILE"
+
+int pmemset_insert_part_map(struct pmemset *set, struct pmemset_part_map *map);
+
+struct pmemset_config *pmemset_get_pmemset_config(struct pmemset *set);
 
 #ifdef __cplusplus
 }
