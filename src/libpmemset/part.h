@@ -9,10 +9,6 @@
 
 #include <stddef.h>
 
-struct pmemset_part_map {
-	struct pmem2_map *pmem2_map;
-};
-
 /*
  * Shutdown state data must be stored by the user externally for reliability.
  * This needs to be read by the user and given to the add part function so that
@@ -21,5 +17,7 @@ struct pmemset_part_map {
 struct pmemset_part_shutdown_state_data {
 	const char data[1024];
 };
+
+struct pmem2_map *pmemset_part_map_get_pmem2_map(struct pmemset_part_map *pmap);
 
 #endif /* PMEMSET_PART_H */

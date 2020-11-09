@@ -23,6 +23,10 @@ struct pmemset_part {
 	size_t length;
 };
 
+struct pmemset_part_map {
+	struct pmem2_map *pmem2_map;
+};
+
 /*
  * pmemset_part_new -- creates a new part for the provided set
  */
@@ -175,10 +179,21 @@ pmemset_part_map_descriptor(struct pmemset_part_map *pmap)
 /*
  * pmemset_part_map_first -- not supported
  */
-int
+void
 pmemset_part_map_first(struct pmemset *set, struct pmemset_part_map **pmap)
 {
-	return PMEMSET_E_NOSUPP;
+	LOG(3, "set %p pmap %p", set, pmap);
+	PMEMSET_ERR_CLR();
+
+	*pmap = NULL;
+
+	struct ravl_interval *pmt = pmemset_get_part_map_tree(set);
+	struct ravl_interval_node *first = ravl_interval_find_first(pmt);
+
+	if (!first)
+		return;
+
+	*pmap = ravl_interval_data(first);
 }
 
 /*
@@ -198,4 +213,15 @@ pmemset_part_map_by_address(struct pmemset *set, struct pmemset_part **part,
 		void *addr)
 {
 	return PMEMSET_E_NOSUPP;
+}
+
+/*
+ * pmemset_part_map_get_pmem2_map -- not supported
+ */
+struct pmem2_map *
+pmemset_part_map_get_pmem2_map(struct pmemset_part_map *pmap)
+{
+	LOG(3, "pmap %p", pmap);
+
+	return pmap->pmem2_map;
 }

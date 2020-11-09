@@ -37,7 +37,8 @@ static size_t
 pmemset_mapping_min(void *addr)
 {
 	struct pmemset_part_map *pmap = (struct pmemset_part_map *)addr;
-	return (size_t)pmem2_map_get_address(pmap->pmem2_map);
+	struct pmem2_map *pmem2_map = pmemset_part_map_get_pmem2_map(pmap);
+	return (size_t)pmem2_map_get_address(pmem2_map);
 }
 
 /*
@@ -47,8 +48,9 @@ static size_t
 pmemset_mapping_max(void *addr)
 {
 	struct pmemset_part_map *pmap = (struct pmemset_part_map *)addr;
-	void *map_addr = pmem2_map_get_address(pmap->pmem2_map);
-	size_t map_size = pmem2_map_get_size(pmap->pmem2_map);
+	struct pmem2_map *pmem2_map = pmemset_part_map_get_pmem2_map(pmap);
+	void *map_addr = pmem2_map_get_address(pmem2_map);
+	size_t map_size = pmem2_map_get_size(pmem2_map);
 	return (size_t)map_addr + map_size;
 }
 
