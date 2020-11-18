@@ -116,8 +116,8 @@ pmemset_part_map(struct pmemset_part **part, struct pmemset_extras *extra,
 
 	struct pmemset_part *p = *part;
 	struct pmemset *set = (*part)->set;
-	int ret = 0;
 	struct pmem2_config *pmem2_cfg;
+	int ret = 0;
 
 	ret = pmem2_config_new(&pmem2_cfg);
 	if (ret) {
@@ -183,7 +183,6 @@ map_err:
 err:
 	pmem2_config_delete(&pmem2_cfg);
 	return ret;
-
 }
 
 /*
@@ -191,15 +190,6 @@ err:
  */
 int
 pmemset_part_map_drop(struct pmemset_part_map **pmap)
-{
-	return PMEMSET_E_NOSUPP;
-}
-
-/*
- * pmemset_part_map_next -- not supported
- */
-int
-pmemset_part_map_next(struct pmemset *set, struct pmemset_part_map **pmap)
 {
 	return PMEMSET_E_NOSUPP;
 }
