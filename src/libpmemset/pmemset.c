@@ -21,6 +21,7 @@
 struct pmemset {
 	struct pmemset_config *set_config;
 	struct ravl_interval *part_map_tree;
+	enum pmem2_granularity effective_granularity;
 };
 
 /*
@@ -83,6 +84,8 @@ pmemset_new_init(struct pmemset *set, struct pmemset_config *config)
 		return PMEMSET_E_ERRNO;
 	}
 
+	set->effective_granularity = PMEMSET_GRANULARITY_INVALID;
+
 	return 0;
 }
 
@@ -94,7 +97,8 @@ pmemset_new(struct pmemset **set, struct pmemset_config *cfg)
 {
 	PMEMSET_ERR_CLR();
 
-	if (pmemset_get_granularity(cfg) == PMEMSET_GRANULARITY_INVALID) {
+	if (pmemset_get_config_granularity(cfg) ==
+			PMEMSET_GRANULARITY_INVALID) {
 		ERR(
 			"please define the max granularity requested for the mapping");
 
@@ -355,4 +359,26 @@ pmemset_descriptor_part_map(struct pmemset_part_map *pmap)
 	desc.size = pmem2_map_get_size(pmap->pmem2_map);
 
 	return desc;
+}
+
+/*
+ * pmemset_set_store_granularity -- set effective_graunlarity
+ * in the pmemset structure
+ */
+void
+pmemset_set_store_granularity(struct pmemset *set, enum pmem2_granularity g)
+{
+	LOG(3, "set %p g %d", set, g);
+	set->effective_granularity = g;
+}
+
+/*
+ * pmemset_get_store_granularity -- get effective_graunlarity
+ * from pmemset
+ */
+enum pmem2_granularity
+pmemset_get_store_granularity(struct pmemset *set)
+{
+	LOG(3, "%p", set);
+	return set->effective_granularity;
 }
