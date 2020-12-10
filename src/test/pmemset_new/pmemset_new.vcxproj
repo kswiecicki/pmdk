@@ -100,6 +100,7 @@
   </ItemGroup>
   <ItemGroup>
     <ClInclude Include="..\..\libpmemset\config.h" />
+    <ClInclude Include="..\..\libpmemset\part.h" />
     <ClInclude Include="..\..\libpmemset\pmemset.h" />
     <ClInclude Include="..\..\libpmemset\pmemset_utils.h" />
     <ClInclude Include="..\unittest\ut_pmemset_utils.h" />

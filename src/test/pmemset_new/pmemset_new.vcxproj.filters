@@ -69,5 +69,8 @@
     <ClInclude Include="..\..\libpmemset\config.h">
       <Filter>Header Files</Filter>
     </ClInclude>
+    <ClInclude Include="..\..\libpmemset\part.h">
+      <Filter>Header Files</Filter>
+    </ClInclude>
   </ItemGroup>
 </Project>

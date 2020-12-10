@@ -9,6 +9,8 @@
 
 struct pmemset_part_map {
 	struct pmem2_map *pmem2_map;
+	struct pmem2_vm_reservation *pmem2_reserv;
+	int refcount;
 };
 
 /*

@@ -82,6 +82,7 @@ pmemset_part_delete(struct pmemset_part **part)
 	pmemset_file_delete(&(*part)->file);
 	Free(*part);
 	*part = NULL;
+
 	return 0;
 }
 
@@ -119,6 +120,7 @@ pmemset_part_map(struct pmemset_part **part, struct pmemset_extras *extra,
 	struct pmemset *set = (*part)->set;
 	struct pmemset_config *set_config = pmemset_get_pmemset_config(set);
 	struct pmem2_config *pmem2_cfg;
+	struct pmem2_vm_reservation *pmem2_reserv = NULL;
 	int ret = 0;
 
 	ret = pmem2_config_new(&pmem2_cfg);
@@ -146,13 +148,23 @@ pmemset_part_map(struct pmemset_part **part, struct pmemset_extras *extra,
 		goto err;
 	}
 
+	struct pmem2_source *pmem2_src;
+	pmem2_src = pmemset_file_get_pmem2_source(p->file);
+
+	struct pmemset_part_descriptor recent_part =
+			pmemset_get_recent_part_descriptor(set);
+	void *contiguous_addr = (char *)recent_part.addr + recent_part.size;
+	size_t part_size = p->length;
+	if (part_size == 0)
+		pmem2_source_size(pmem2_src, &part_size);
+
+	pmem2_vm_reservation_new(&pmem2_reserv, contiguous_addr, part_size);
+	pmem2_config_set_vm_reservation(pmem2_cfg, pmem2_reserv, 0);
+
 	struct pmemset_part_map *part_map;
 	part_map = pmemset_malloc(sizeof(*part_map), &ret);
 	if (ret)
 		goto map_err;
-
-	struct pmem2_source *pmem2_src;
-	pmem2_src = pmemset_file_get_pmem2_source(p->file);
 
 	struct pmem2_map *pmem2_map;
 	ret = pmem2_map_new(&pmem2_map, pmem2_cfg, pmem2_src);
@@ -182,6 +194,8 @@ pmemset_part_map(struct pmemset_part **part, struct pmemset_extras *extra,
 	}
 
 	part_map->pmem2_map = pmem2_map;
+	part_map->refcount = 0;
+	part_map->pmem2_reserv = pmem2_reserv;
 
 	/*
 	 * XXX: add multiple part support
@@ -194,9 +208,13 @@ pmemset_part_map(struct pmemset_part **part, struct pmemset_extras *extra,
 		goto map_err;
 	}
 
+	void *map_addr = pmem2_map_get_address(pmem2_map);
+	size_t map_size = pmem2_map_get_size(pmem2_map);
+	pmemset_set_recent_part_descriptor(set, map_addr, map_size);
+
 	if (desc) {
-		desc->addr = pmem2_map_get_address(pmem2_map);
-		desc->size = pmem2_map_get_size(pmem2_map);
+		desc->addr = map_addr;
+		desc->size = map_size;
 	}
 
 map_err:
@@ -207,12 +225,16 @@ err:
 }
 
 /*
- * pmemset_part_map_drop -- not supported
+ * pmemset_part_map_drop -- drops the reference to the part map through provided
+ *                          ponter. Doesn't delete part map.
  */
-int
+void
 pmemset_part_map_drop(struct pmemset_part_map **pmap)
 {
-	return PMEMSET_E_NOSUPP;
+	LOG(3, "pmap %p", pmap);
+
+	(*pmap)->refcount -= 1;
+	*pmap = NULL;
 }
 
 /*

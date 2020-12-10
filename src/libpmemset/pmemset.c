@@ -22,6 +22,7 @@ struct pmemset {
 	struct pmemset_config *set_config;
 	struct ravl_interval *part_map_tree;
 	enum pmem2_granularity effective_granularity;
+	struct pmemset_part_descriptor recent_part;
 };
 
 /*
@@ -85,6 +86,8 @@ pmemset_new_init(struct pmemset *set, struct pmemset_config *config)
 	}
 
 	set->effective_granularity = PMEMSET_GRANULARITY_INVALID;
+	set->recent_part.addr = NULL;
+	set->recent_part.size = 0;
 
 	return 0;
 }
@@ -142,6 +145,8 @@ pmemset_delete(struct pmemset **set)
 		struct pmemset_part_map *map = ravl_interval_data(node);
 		ravl_interval_remove((*set)->part_map_tree, node);
 		pmem2_map_delete(&map->pmem2_map);
+		if (map->pmem2_reserv)
+			pmem2_vm_reservation_delete(&map->pmem2_reserv);
 		Free(map);
 	}
 
@@ -311,7 +316,50 @@ pmemset_get_pmemset_config(struct pmemset *set)
 }
 
 /*
- * pmemset_map_first -- retrieve first part map from the set
+ * pmemset_set_store_granularity -- set effective_graunlarity
+ * in the pmemset structure
+ */
+void
+pmemset_set_store_granularity(struct pmemset *set, enum pmem2_granularity g)
+{
+	LOG(3, "set %p g %d", set, g);
+	set->effective_granularity = g;
+}
+
+/*
+ * pmemset_get_store_granularity -- get effective_graunlarity
+ * from pmemset
+ */
+enum pmem2_granularity
+pmemset_get_store_granularity(struct pmemset *set)
+{
+	LOG(3, "set %p", set);
+	return set->effective_granularity;
+}
+
+/*
+ * pmemset_get_recent_part_descriptor -- get recent part descriptor from pmemset
+ */
+struct pmemset_part_descriptor
+pmemset_get_recent_part_descriptor(struct pmemset *set)
+{
+	LOG(3, "set %p", set);
+	return set->recent_part;
+}
+
+/*
+ * pmemset_set_recent_part_descriptor -- set recent part descriptor in the set
+ */
+void
+pmemset_set_recent_part_descriptor(struct pmemset *set, void *addr, size_t size)
+{
+	LOG(3, "set %p addr %p size %zu", set, addr, size);
+	set->recent_part.addr = addr;
+	set->recent_part.size = size;
+}
+
+/*
+ * pmemset_first_part_map -- retrieve first part map from the set
  */
 void
 pmemset_first_part_map(struct pmemset *set, struct pmemset_part_map **pmap)
@@ -326,6 +374,8 @@ pmemset_first_part_map(struct pmemset *set, struct pmemset_part_map **pmap)
 
 	if (first)
 		*pmap = ravl_interval_data(first);
+
+	(*pmap)->refcount += 1;
 }
 
 /*
@@ -346,6 +396,7 @@ pmemset_next_part_map(struct pmemset *set, struct pmemset_part_map *cur,
 	if (found)
 		*next = ravl_interval_data(found);
 
+	(*next)->refcount += 1;
 }
 
 /*
@@ -359,26 +410,4 @@ pmemset_descriptor_part_map(struct pmemset_part_map *pmap)
 	desc.size = pmem2_map_get_size(pmap->pmem2_map);
 
 	return desc;
-}
-
-/*
- * pmemset_set_store_granularity -- set effective_graunlarity
- * in the pmemset structure
- */
-void
-pmemset_set_store_granularity(struct pmemset *set, enum pmem2_granularity g)
-{
-	LOG(3, "set %p g %d", set, g);
-	set->effective_granularity = g;
-}
-
-/*
- * pmemset_get_store_granularity -- get effective_graunlarity
- * from pmemset
- */
-enum pmem2_granularity
-pmemset_get_store_granularity(struct pmemset *set)
-{
-	LOG(3, "%p", set);
-	return set->effective_granularity;
 }
