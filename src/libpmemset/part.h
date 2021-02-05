@@ -15,6 +15,13 @@ struct pmemset_part_map {
 };
 
 /*
+ * typedef for callback function invoked on each iteration of pmem2 mapping
+ * stored in the part mapping
+ */
+typedef int pmemset_part_map_iter_cb(struct pmemset_part_map *pmap,
+		struct pmem2_map *map, void *arg);
+
+/*
  * Shutdown state data must be stored by the user externally for reliability.
  * This needs to be read by the user and given to the add part function so that
  * the current shutdown state can be compared with the old one.
@@ -32,5 +39,10 @@ int pmemset_part_map_new(struct pmemset_part_map **part_map,
 		enum pmemset_coalescing part_coalescing);
 
 void pmemset_part_map_delete(struct pmemset_part_map **part_map);
+
+int pmemset_part_map_delete_with_contents(struct pmemset_part_map **part_ptr);
+
+int pmemset_part_map_iterate(struct pmemset_part_map *pmap, size_t offset,
+		size_t size, pmemset_part_map_iter_cb cb, void *arg);
 
 #endif /* PMEMSET_PART_H */

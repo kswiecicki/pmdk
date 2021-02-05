@@ -105,8 +105,24 @@ pmemset_part_get_pmemset(struct pmemset_part *part)
 }
 
 /*
- * pmemset_part_map_new -- map a part and create a structure
- *                         that describes the mapping
+ * pmemset_part_map_init -- initialize the part map structure
+ */
+static int
+pmemset_part_map_init(struct pmemset_part_map *pmap,
+		struct pmem2_vm_reservation *pmem2_reserv)
+{
+	pmap->desc.addr = pmem2_vm_reservation_get_address(
+			pmem2_reserv);
+	pmap->desc.size = pmem2_vm_reservation_get_size(pmem2_reserv);
+	pmap->pmem2_reserv = pmem2_reserv;
+	pmap->refcount = 0;
+
+	return 0;
+}
+
+/*
+ * pmemset_part_map_new -- creates a new part mapping with a new part or extends
+ *                         an existing part mapping by a new part
  */
 int
 pmemset_part_map_new(struct pmemset_part_map **part_map,
@@ -199,28 +215,19 @@ pmemset_part_map_new(struct pmemset_part_map **part_map,
 	if (ret) {
 		ERR("cannot create pmem2 mapping %d", ret);
 		ret = PMEMSET_E_INVALID_PMEM2_MAP;
-		if (coalesced) {
-			size_t offset = pmem2_vm_reservation_get_size(
-					pmem2_reserv) - part_size;
-			pmem2_vm_reservation_shrink(pmem2_reserv, offset,
-					part_size);
-		} else {
-			pmem2_vm_reservation_delete(&pmem2_reserv);
-		}
-		goto err_cfg_delete;
+		goto err_p2rsv_delete_or_shrink;
 	}
 
+	struct pmemset_part_map *pmap;
 	if (!coalesced) {
-		struct pmemset_part_map *pmap;
 		pmap = pmemset_malloc(sizeof(*pmap), &ret);
 		if (ret)
-			goto err_cfg_delete;
+			goto err_p2map_delete;
 
-		pmap->desc.addr = pmem2_vm_reservation_get_address(
-				pmem2_reserv);
-		pmap->desc.size = pmem2_vm_reservation_get_size(pmem2_reserv);
-		pmap->pmem2_reserv = pmem2_reserv;
-		pmap->refcount = 0;
+		ret = pmemset_part_map_init(pmap, pmem2_reserv);
+		if (ret)
+			goto err_pmap_free;
+
 		*part_map = pmap;
 	} else {
 		prev_pmap->desc.size = pmem2_vm_reservation_get_size(
@@ -229,14 +236,32 @@ pmemset_part_map_new(struct pmemset_part_map **part_map,
 
 	*mapping_gran = pmem2_map_get_store_granularity(pmem2_map);
 
+	pmem2_config_delete(&pmem2_cfg);
+
+	return 0;
+
+err_pmap_free:
+	Free(pmap);
+err_p2map_delete:
+	pmem2_map_delete(&pmem2_map);
+err_p2rsv_delete_or_shrink:
+	if (coalesced) {
+		size_t offset = pmem2_vm_reservation_get_size(pmem2_reserv) -
+				part_size;
+		pmem2_vm_reservation_shrink(pmem2_reserv, offset,
+				part_size);
+	} else {
+		pmem2_vm_reservation_delete(&pmem2_reserv);
+	}
 err_cfg_delete:
 	pmem2_config_delete(&pmem2_cfg);
 	return ret;
 }
 
 /*
- * pmemset_part_map_delete -- unmap the part map and delete the
- *                            structure that describes the mapping
+ * pmemset_part_map_delete -- removes the most recently mapped part from part
+ * mapping, if it was the only one stored then part map structure is also
+ * deleted
  */
 void
 pmemset_part_map_delete(struct pmemset_part_map **part_map)
@@ -269,4 +294,73 @@ pmemset_part_map_delete(struct pmemset_part_map **part_map)
 	}
 
 	*part_map = NULL;
+}
+
+/*
+ * pmemset_part_map_delete_with_contents -- removes the part map structure and
+ *                                          unmaps underlying pmem2 mappings
+ */
+int
+pmemset_part_map_delete_with_contents(struct pmemset_part_map **part_ptr)
+{
+	int ret;
+	struct pmemset_part_map *pmap = *part_ptr;
+	struct pmem2_vm_reservation *rsv = pmap->pmem2_reserv;
+	size_t rsv_size = pmem2_vm_reservation_get_size(rsv);
+
+	struct pmem2_map *map;
+	pmem2_vm_reservation_map_find(rsv, 0, rsv_size, &map);
+	while (map) {
+		ret = pmem2_map_delete(&map);
+		if (ret)
+			return ret;
+
+		pmem2_vm_reservation_map_find(rsv, 0, rsv_size, &map);
+	}
+
+	ret = pmem2_vm_reservation_delete(&rsv);
+	if (ret)
+		return ret;
+
+	Free(pmap);
+	*part_ptr = NULL;
+
+	return 0;
+}
+
+/*
+ * pmemset_part_map_iterate -- iterates over every pmem2 mappings stored in the
+ * part mapping overlapping with the region defined by the offset and
+ * size.
+ */
+int
+pmemset_part_map_iterate(struct pmemset_part_map *pmap, size_t offset,
+		size_t size, pmemset_part_map_iter_cb cb, void *arg)
+{
+	struct pmem2_vm_reservation *pmem2_rsv = pmap->pmem2_reserv;
+
+	size_t rsv_addr = (size_t)pmem2_vm_reservation_get_address(pmem2_rsv);
+	size_t end_offset = offset + size;
+
+	struct pmem2_map *map;
+	pmem2_vm_reservation_map_find(pmem2_rsv, offset, size, &map);
+	while (map) {
+		size_t map_addr = (size_t)pmem2_map_get_address(map);
+		size_t map_size = pmem2_map_get_size(map);
+
+		int ret = cb(pmap, map, arg);
+		if (ret)
+			return ret;
+
+		size_t cur_offset = map_addr + map_size - rsv_addr;
+		if (end_offset > cur_offset) {
+			size_t cur_size = end_offset - cur_offset;
+			pmem2_vm_reservation_map_find(pmem2_rsv, cur_offset,
+					cur_size, &map);
+		} else {
+			map = NULL;
+		}
+	}
+
+	return 0;
 }

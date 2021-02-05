@@ -159,7 +159,8 @@ static void
 pmemset_unmap_stored_part_maps_callback(void *data, void *arg)
 {
 	struct pmemset_part_map **pmap = (struct pmemset_part_map **)data;
-	pmemset_part_map_delete(pmap);
+	int ret = pmemset_part_map_delete_with_contents(pmap);
+	ASSERTeq(ret, 0);
 }
 
 /*
@@ -421,24 +422,8 @@ pmemset_remove_part_map(struct pmemset *set, struct pmemset_part_map **part_ptr)
 	PMEMSET_ERR_CLR();
 
 	struct pmemset_part_map *pmap = *part_ptr;
-	struct pmem2_vm_reservation *rsv = pmap->pmem2_reserv;
-	size_t rsv_size = pmem2_vm_reservation_get_size(rsv);
 
 	int ret = pmemset_unregister_part_map(set, pmap);
-	if (ret)
-		return ret;
-
-	struct pmem2_map *map;
-	pmem2_vm_reservation_map_find(rsv, 0, rsv_size, &map);
-	while (map) {
-		ret = pmem2_map_delete(&map);
-		if (ret)
-			return ret;
-
-		pmem2_vm_reservation_map_find(rsv, 0, rsv_size, &map);
-	}
-
-	ret = pmem2_vm_reservation_delete(&rsv);
 	if (ret)
 		return ret;
 
@@ -457,19 +442,126 @@ pmemset_remove_part_map(struct pmemset *set, struct pmemset_part_map **part_ptr)
 		set->previous_pmap = (node) ? ravl_interval_data(node) : NULL;
 	}
 
-	Free(pmap);
-	*part_ptr = NULL;
+	ret = pmemset_part_map_delete_with_contents(part_ptr);
+	if (ret)
+		goto err_register_part;
+
+	return 0;
+
+err_register_part:
+	pmemset_insert_part_map(set, pmap);
+
+	return ret;
+}
+
+/*
+ * typedef for callback function invoked on each iteration of part mapping
+ * stored in the pmemset
+ */
+typedef int pmemset_iter_cb(struct pmemset *set, struct pmemset_part_map *pmap,
+		void *arg);
+
+/*
+ * pmemset_iterate -- iterates over every part mapping stored in the
+ * pmemset overlapping with the region defined by the address and size.
+ */
+static int
+pmemset_iterate(struct pmemset *set, void *addr, size_t len, pmemset_iter_cb cb,
+		void *arg)
+{
+	size_t end_addr = (size_t)addr + len;
+
+	struct pmemset_part_map dummy_map;
+	dummy_map.desc.addr = addr;
+	dummy_map.desc.size = len;
+	struct ravl_interval_node *node = ravl_interval_find(set->part_map_tree,
+			&dummy_map);
+	while (node) {
+		struct pmemset_part_map *fmap = ravl_interval_data(node);
+		size_t fmap_addr = (size_t)fmap->desc.addr;
+		size_t fmap_size = fmap->desc.size;
+
+		int ret = cb(set, fmap, arg);
+		if (ret)
+			return ret;
+
+		size_t cur_addr = fmap_addr + fmap_size;
+		if (end_addr > cur_addr) {
+			dummy_map.desc.addr = (char *)cur_addr;
+			dummy_map.desc.size = end_addr - cur_addr;
+			node = ravl_interval_find(set->part_map_tree,
+					&dummy_map);
+		} else {
+			node = NULL;
+		}
+	}
+
+	return 0;
+}
+
+static int
+pmemset_remove_pmem2_map(struct pmemset_part_map *pmap, struct pmem2_map *map,
+		void *arg)
+{
+	return pmem2_map_delete(&map);
+}
+
+struct pmap_remove_range_arg {
+	size_t addr;
+	size_t size;
+};
+
+/*
+ * pmemset_remove_part_map_range -- removes the memory range belonging to the
+ *                                  part mapping
+ */
+static int
+pmemset_remove_part_map_range(struct pmemset *set,
+		struct pmemset_part_map *pmap, void *arg)
+{
+	struct pmap_remove_range_arg *rarg =
+			(struct pmap_remove_range_arg *)arg;
+	size_t end_addr = rarg->addr + rarg->size;
+
+	struct pmem2_vm_reservation *pmem2_rsv = pmap->pmem2_reserv;
+	size_t rsv_addr = (size_t)pmem2_vm_reservation_get_address(pmem2_rsv);
+
+	/*
+	 * If the remove range starting address is earlier than the part mapping
+	 * address then the minimal possible offset is 0, if it's later then
+	 * calculate the difference and set it as offset. Adjust the range size
+	 * to match either of those cases.
+	 */
+	size_t offset = (rarg->addr > rsv_addr) ? rarg->addr - rsv_addr : 0;
+	size_t adjusted_size = end_addr - rsv_addr - offset;
+
+	int ret = pmemset_part_map_iterate(pmap, offset, adjusted_size,
+			pmemset_remove_pmem2_map, NULL);
+	if (ret) {
+		if (ret == PMEM2_E_MAPPING_NOT_FOUND)
+			return PMEMSET_E_CANNOT_FIND_PART_MAP;
+		return ret;
+	}
 
 	return 0;
 }
 
 /*
- * pmemset_remove_range -- not supported
+ * pmemset_remove_range -- removes the file mappings covering the memory ranges
+ *                         contained in or intersected with the provided range
  */
 int
 pmemset_remove_range(struct pmemset *set, void *addr, size_t len)
 {
-	return PMEMSET_E_NOSUPP;
+	LOG(3, "set %p addr %p len %zu", set, addr, len);
+	PMEMSET_ERR_CLR();
+
+	struct pmap_remove_range_arg arg;
+	arg.addr = (size_t)addr;
+	arg.size = len;
+
+	return pmemset_iterate(set, addr, len, pmemset_remove_part_map_range,
+			&arg);
 }
 
 /*
